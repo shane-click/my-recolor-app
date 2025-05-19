@@ -7,16 +7,17 @@ import replicate
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
-# ── Replicate token (set in Render → Environment) ─────────────
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")      # r8_********
-if not REPLICATE_API_TOKEN:
-    raise RuntimeError("Set REPLICATE_API_TOKEN in Render → Environment")
-os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 # ──────────────────────────────────────────────────────────────
+#  Replicate API token (add in Render → Environment as r8_…)
+# ──────────────────────────────────────────────────────────────
+token = os.getenv("REPLICATE_API_TOKEN")
+if not token:
+    raise RuntimeError("Set REPLICATE_API_TOKEN in Render → Environment")
+os.environ["REPLICATE_API_TOKEN"] = token
 
-# Public T4-tier models (no HPC permission required)
-SEG_MODEL     = "pablodawson/segment-anything-automatic:latest"  # SAM auto-mask
-INPAINT_MODEL = "sepal/sdxl-inpainting:latest"                   # SDXL in-paint
+# Public T4-tier models (no HPC permission needed)
+SEG_MODEL     = "pablodawson/segment-anything-automatic:latest"
+INPAINT_MODEL = "sepal/sdxl-inpainting:latest"
 
 app = Flask(__name__)
 CORS(app)
@@ -27,13 +28,13 @@ def allowed(fn: str) -> bool:
 
 
 @app.route("/")
-def index():
+def home():
     return "POST /recolor (multipart) with fields: image, color"
 
 
 @app.route("/recolor", methods=["POST"])
 def recolor():
-    # 1 ▸ validate upload & colour
+    # ── validate upload + colour ─────────────────────────────
     if "image" not in request.files:
         return jsonify(error="No image file"), 400
     f = request.files["image"]
@@ -44,27 +45,40 @@ def recolor():
     if not colour:
         return jsonify(error="Missing 'color' field"), 400
 
-    # 2 ▸ read once, wrap in BytesIO for both API calls
-    data = f.read()
-    img  = io.BytesIO(data)
-    img.name = "upload.png"
+    # ── read once, wrap in BytesIO ───────────────────────────
+    img_bytes = f.read()
+    img_stream = io.BytesIO(img_bytes)
+    img_stream.name = "upload.png"
 
-    # 3 ▸ automatic segmentation (SAM)
+    # ── 1️⃣  Automatic mask with SAM ─────────────────────────
     try:
         masks = replicate.run(
             SEG_MODEL,
             input={
-                "image": img,
+                "image": img_stream,
                 "resize_width": 1024,
                 "points_per_side": 32
             }
         )
     except Exception as e:
-        detail = getattr(e, "detail", str(e))          # <-- show real reason
+        # --- DEBUG: print everything to Render logs ----------
         traceback.print_exc(file=sys.stderr)
-        return jsonify(error=f"Segmentation API error: {detail}"), 500
+        print("── Replicate error attrs ──", file=sys.stderr)
+        for attr in dir(e):
+            if attr.startswith("_"):
+                continue
+            try:
+                val = getattr(e, attr)
+                print(f"{attr}: {val!r}", file=sys.stderr)
+            except Exception:
+                pass
+        print("── end attrs ──", file=sys.stderr)
+        # ------------------------------------------------------
+        msg = getattr(e, "detail", None) or getattr(e, "message", None) \
+              or (e.args[0] if e.args else str(e))
+        return jsonify(error=f"Segmentation API error: {msg}"), 500
 
-    # choose largest mask or fall back to full image
+    # choose largest mask (roof usually biggest) or fallback
     if masks:
         mask_url = max(
             masks,
@@ -73,10 +87,10 @@ def recolor():
             )
         )
     else:
-        mask_url = None  # recolour whole image if no mask
+        mask_url = None  # recolour whole frame
 
-    # 4 ▸ SDXL in-paint
-    img.seek(0)
+    # ── 2️⃣  SDXL in-paint ───────────────────────────────────
+    img_stream.seek(0)
     prompt = (
         f"Change only the roof to {colour}. Keep everything else identical. "
         "Ultra-realistic photograph."
@@ -84,7 +98,7 @@ def recolor():
 
     payload = {
         "prompt": prompt,
-        "image":  img,
+        "image":  img_stream,
         "num_inference_steps": 30,
         "guidance_scale": 7,
         "strength": 0.4
@@ -101,9 +115,10 @@ def recolor():
             download_name="recolored.png"
         )
     except Exception as e:
-        detail = getattr(e, "detail", str(e))
         traceback.print_exc(file=sys.stderr)
-        return jsonify(error=f"In-paint API error: {detail}"), 500
+        err = getattr(e, "detail", None) or getattr(e, "message", None) \
+              or (e.args[0] if e.args else str(e))
+        return jsonify(error=f"In-paint API error: {err}"), 500
 
 
 if __name__ == "__main__":

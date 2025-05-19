@@ -8,11 +8,27 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")          #  sk-proj-xxxxxxxx…
 
-if openai.api_key and openai.api_key.startswith("sk-proj-"):
+# 2 ▸ if it’s a project key, monkey-patch the validator
+if api_key and api_key.startswith("sk-proj-"):
     import openai.api_requestor as _ar
-    _ar._VALID_API_KEY_PREFIXES = ("sk-", "sk-proj-", "sess-")
+    import openai.error as _err
+
+    def _accept_proj_keys(key: str):
+        """Allow sk-, sk-proj-, sess-  (reject None / wrong type)."""
+        if key is None or not isinstance(key, str):
+            raise _err.AuthenticationError(
+                "No API key provided. Create one at https://platform.openai.com/account/api-keys"
+            )
+        # any string that *starts with* the approved prefixes is ok
+        if not key.startswith(("sk-", "sk-proj-", "sess-")):
+            raise _err.AuthenticationError("Malformed API key")
+
+    _ar._validate_api_key = _accept_proj_keys      # ← HOT PATCH
+# ──────────────────────────────────────────────────────────────
+
+openai.api_key = api_key            
     
 app = Flask(__name__)
 CORS(app)

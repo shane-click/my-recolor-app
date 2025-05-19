@@ -2,11 +2,11 @@ import os
 import io
 import requests
 import openai
+from flask_cors import CORS
 
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 
-# Set your OpenAI API key in an environment variable: OPENAI_API_KEY
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)

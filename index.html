@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Town & Country | Dulux Acratex Recolor</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Header with Logo (Brand Colors) -->
+    <header class="tc-header">
+      <img
+        src="logo.png"
+        alt="Town & Country Gutters and Roofing"
+        class="tc-logo"
+      />
+    </header>
+
+    <!-- Main Container -->
+    <main class="tc-container">
+      <h1 class="tc-title">Dulux Acratex Recolor Tool</h1>
+
+      <!-- Recolor Card -->
+      <div class="recolor-card">
+        <!-- Image Upload (Styled Button) -->
+        <div class="form-group upload-container">
+          <label for="imageInput" class="upload-label">Choose Image</label>
+          <input type="file" id="imageInput" accept="image/png, image/jpeg" />
+        </div>
+
+        <!-- Color Selection Buttons -->
+        <div class="color-buttons">
+          <p>Select a Dulux Acratex Color:</p>
+          <!-- Greys -->
+          <button class="charcoal"    onclick="selectColor('Dulux Acratex Charcoal')">Charcoal</button>
+          <button class="dark-grey"   onclick="selectColor('Dulux Acratex Dark Grey')">Dark Grey</button>
+          <button class="mid-grey"    onclick="selectColor('Dulux Acratex Mid Grey')">Mid Grey</button>
+          <button class="light-grey"  onclick="selectColor('Dulux Acratex Light Grey')">Light Grey</button>
+
+          <!-- Naturals -->
+          <button class="storm"       onclick="selectColor('Dulux Acratex Storm')">Storm</button>
+          <button class="merino"      onclick="selectColor('Dulux Acratex Merino')">Merino</button>
+          <button class="pearl"       onclick="selectColor('Dulux Acratex Pearl')">Pearl</button>
+          <button class="offwhite"    onclick="selectColor('Dulux Acratex Off-white')">Off-white</button>
+
+          <!-- Reds -->
+          <button class="clay-brick"  onclick="selectColor('Dulux Acratex Clay Brick')">Clay Brick</button>
+          <button class="heritage-red"onclick="selectColor('Dulux Acratex Heritage Red')">Heritage Red</button>
+          <button class="tuscan-red"  onclick="selectColor('Dulux Acratex Tuscan Red')">Tuscan Red</button>
+          <button class="terracotta"  onclick="selectColor('Dulux Acratex Terracotta')">Terracotta</button>
+
+          <!-- Greens -->
+          <button class="brunswick"   onclick="selectColor('Dulux Acratex Brunswick Green')">Brunswick Green</button>
+          <button class="caulfield"   onclick="selectColor('Dulux Acratex Caulfield Green')">Caulfield Green</button>
+          <button class="mist-green"  onclick="selectColor('Dulux Acratex Mist Green')">Mist Green</button>
+          <button class="rivergum"    onclick="selectColor('Dulux Acratex Rivergum')">Rivergum</button>
+        </div>
+
+        <!-- Display Selected Color -->
+        <p class="chosen-color">
+          Chosen Color: <strong id="selectedColor">None</strong>
+        </p>
+
+        <!-- Recolor Button -->
+        <button class="recolor-button" onclick="uploadAndRecolor()">
+          Recolor Image
+        </button>
+
+        <!-- Preview Returned Image -->
+        <div class="preview">
+          <h3>Recolored Image Preview:</h3>
+          <!-- Container for loading bar + final image -->
+          <div class="image-container" id="imageContainer">
+            <!-- Loading bar, hidden by default -->
+            <div class="loading-bar" id="loadingBar"></div>
+            <!-- Final recolored image, hidden by default -->
+            <img id="resultImage" />
+          </div>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMessage"></div>
+      </div>
+    </main>
+
+    <!-- Footer (Optional) -->
+    <footer class="tc-footer">
+      <p>&copy; 2025 Town & Country Gutters and Roofing</p>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

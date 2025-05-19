@@ -1,0 +1,82 @@
+import os
+import io
+import requests
+import openai
+
+from flask import Flask, request, jsonify, send_file
+from werkzeug.utils import secure_filename
+
+# Set your OpenAI API key in an environment variable: OPENAI_API_KEY
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+app = Flask(__name__)
+
+# Allowed extensions
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route("/")
+def index():
+    return "Backend is running. POST to /recolor with 'image' and 'color'."
+
+@app.route("/recolor", methods=["POST"])
+def recolor():
+    """
+    Expects:
+      - `image`: the uploaded file
+      - `color`: the color string (e.g. 'Dulux Acratex Charcoal')
+    Returns:
+      - A new image (PNG) with the roof color changed
+    """
+    if "image" not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
+    
+    image_file = request.files["image"]
+    if image_file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+    
+    if not allowed_file(image_file.filename):
+        return jsonify({"error": "File type not allowed"}), 400
+
+    color = request.form.get("color", "")
+    if not color:
+        return jsonify({"error": "No color provided"}), 400
+
+    # Read the uploaded image in bytes (not strictly used in 'create' method, but let's read it anyway)
+    uploaded_image_bytes = image_file.read()
+
+    # Build a prompt that tries to preserve the original image except for the roof.
+    # We describe the scene so that only the roof is recolored, everything else remains the same.
+    prompt = (
+        f"A detailed, realistic photograph of a house. Only change the roof color to {color}, "
+        "keeping the rest of the house, sky, and surroundings the same. Ultra-realistic photography style."
+    )
+
+    try:
+        # Call the OpenAI Image Create endpoint with the prompt
+        response = openai.Image.create(
+            prompt=prompt,
+            n=1,
+            size="512x512"  # or "1024x1024", etc.
+        )
+        # Extract the returned image URL
+        image_url = response["data"][0]["url"]
+
+        # Download the generated image
+        img_data = requests.get(image_url).content
+
+        # Return it to the client as a PNG
+        return send_file(
+            io.BytesIO(img_data),
+            mimetype="image/png",
+            as_attachment=False,
+            download_name="recolored.png"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    # For local testing, run:  python app.py
+    app.run(debug=True, host="0.0.0.0", port=5000)

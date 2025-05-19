@@ -1,81 +1,88 @@
-import os
-import io
-import requests
-
+import os, io, requests, replicate
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
 
-# ── REQUIRED ────────────────────────────────────────────────
-API_KEY     = os.getenv("OPENAI_API_KEY")      # sk-proj-xxxxxxxx…
-PROJECT_ID  = "proj_b6A7WmLHkhfYIzLr9bLCbH9z"  # ← your project ID
+# ── Replicate set-up ───────────────────────────────────────────
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+if not REPLICATE_API_TOKEN:
+    raise RuntimeError("Add REPLICATE_API_TOKEN in Render → Environment")
 
-if not API_KEY:
-    raise RuntimeError("OPENAI_API_KEY environment variable is missing")
-# ────────────────────────────────────────────────────────────
+os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
+
+SEG_MODEL = "okaris/grounded-sam"          # auto-mask → returns mask URL list
+INPAINT_MODEL = "stability-ai/sdxl"        # SDXL with in-paint endpoint
+# ───────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 CORS(app)
 
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
-
-
-def allowed_file(fn: str) -> bool:
-    return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+ALLOWED = {"png", "jpg", "jpeg"}
+def allowed(fn): return "." in fn and fn.rsplit(".", 1)[1].lower() in ALLOWED
 
 
 @app.route("/")
-def index():
-    return "Backend is running. POST to /recolor with 'image' and 'color'."
+def home():
+    return "POST /recolor with fields: image, color"
 
 
 @app.route("/recolor", methods=["POST"])
 def recolor():
+    # 1 ◦ basic checks
     if "image" not in request.files:
-        return jsonify({"error": "No image file provided"}), 400
+        return jsonify(error="No image file"), 400
+    img_f = request.files["image"]
+    if img_f.filename == "" or not allowed(img_f.filename):
+        return jsonify(error="Bad filename"), 400
 
-    f = request.files["image"]
-    if f.filename == "":
-        return jsonify({"error": "No selected file"}), 400
-    if not allowed_file(f.filename):
-        return jsonify({"error": "File type not allowed"}), 400
+    colour = request.form.get("color", "").strip()
+    if not colour:
+        return jsonify(error="Missing 'color'"), 400
 
-    color = request.form.get("color", "")
-    if not color:
-        return jsonify({"error": "No color provided"}), 400
+    # 2 ◦ auto-segment the roof
+    try:
+        mask_urls = replicate.run(
+            f"{SEG_MODEL}:latest",
+            input={
+                "image": img_f,               # file object
+                "mask_prompt": "roof",
+                "negative_mask_prompt": "sky",
+                "adjustment_factor": -10      # slight erosion so mask sits inside roof edge
+            }
+        )
+        if not mask_urls:
+            return jsonify(error="Roof mask not found"), 500
+        mask_url = mask_urls[0]               # first mask URL
+    except Exception as e:
+        return jsonify(error=f"Segmentation error: {e}"), 500
 
-    prompt = (
-        f"A detailed, realistic photograph of a house. Only change the roof colour to {color}, "
-        "keeping the rest of the house, sky, and surroundings the same. Ultra-realistic photography style."
-    )
+    # 3 ◦ in-paint just the roof region
+    prompt = (f"Replace only the roof with {colour}. "
+              "Keep lighting, perspective, and everything else identical. "
+              "Ultra-realistic photo.")
+    neg = "blurry, oversaturated, distorted, extra objects"
 
     try:
-        # ── Raw HTTPS call to OpenAI Images endpoint ───────────
-        url = "https://api.openai.com/v1/images/generations"
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json",
-            "OpenAI-Project": PROJECT_ID,        # ← project header
-        }
-        payload = {"prompt": prompt, "n": 1, "size": "512x512"}
-
-        r = requests.post(url, headers=headers, json=payload, timeout=60)
-        r.raise_for_status()
-        image_url = r.json()["data"][0]["url"]
-        # ───────────────────────────────────────────────────────
-
-        img_data = requests.get(image_url, timeout=60).content
-        return send_file(
-            io.BytesIO(img_data),
-            mimetype="image/png",
-            as_attachment=False,
-            download_name="recolored.png",
+        result = replicate.run(
+            f"{INPAINT_MODEL}:latest",
+            input={
+                "prompt": prompt,
+                "negative_prompt": neg,
+                "image": img_f,       # same original stream
+                "mask": mask_url,     # auto roof mask
+                "prompt_strength": 0.35,
+                "num_inference_steps": 35,
+                "guidance_scale": 7.5,
+                "width": 1024,
+                "height": 1024
+            }
         )
-
-    except requests.HTTPError as err:
-        return jsonify({"error": err.response.text}), 500
+        out_url = result[0]
+        png = requests.get(out_url, timeout=60).content
+        return send_file(io.BytesIO(png),
+                         mimetype="image/png",
+                         download_name="recolored.png")
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify(error=f"In-paint error: {e}"), 500
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 // Replace this with your actual backend endpoint
-const BACKEND_URL = "https://your-backend.example.com";
+const BACKEND_URL = "https://my-recolor-app.onrender.com";
 
 let chosenColor = null;
 
